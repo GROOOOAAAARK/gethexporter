@@ -3,11 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"log"
 	"math/big"
 	"net/http"
@@ -15,6 +10,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 var (
@@ -45,7 +46,10 @@ type GethInfo struct {
 	LastBlockUpdate  time.Time
 	SugGasPrice      *big.Int
 	PendingTx        uint
-	NetworkId        *big.Int
+	NetworkID        *big.Int
+	LastBlockTime    float64
+	SyncStatus       bool
+	MiningStatus     bool
 }
 
 type Address struct {
@@ -127,8 +131,14 @@ func Routine() {
 		}
 		geth.SugGasPrice, _ = eth.SuggestGasPrice(ctx)
 		geth.PendingTx, _ = eth.PendingTransactionCount(ctx)
-		geth.NetworkId, _ = eth.NetworkID(ctx)
+		geth.NetworkID, _ = eth.NetworkID(ctx)
 		geth.Sync, _ = eth.SyncProgress(ctx)
+		if geth.Sync.HighestBlock != geth.Sync.CurrentBlock {
+			geth.SyncStatus = true
+		} else {
+			geth.SyncStatus = false
+		}
+		//geth.LastBlockTime =
 
 		if lastBlock == nil || geth.CurrentBlock.NumberU64() > lastBlock.NumberU64() {
 			log.Printf("Received block #%v with %v transactions (%v)\n", geth.CurrentBlock.NumberU64(), len(geth.CurrentBlock.Transactions()), geth.CurrentBlock.Hash().String())
@@ -155,7 +165,6 @@ func Routine() {
 	}
 }
 
-//
 // HTTP response handler for /metrics
 func MetricsHttp(w http.ResponseWriter, r *http.Request) {
 	var allOut []string
@@ -179,11 +188,13 @@ func MetricsHttp(w http.ResponseWriter, r *http.Request) {
 	allOut = append(allOut, fmt.Sprintf("geth_block_size_bytes %v", geth.BlockSize))
 	allOut = append(allOut, fmt.Sprintf("geth_gas_price %v", geth.SugGasPrice))
 	allOut = append(allOut, fmt.Sprintf("geth_pending_transactions %v", geth.PendingTx))
-	allOut = append(allOut, fmt.Sprintf("geth_network_id %v", geth.NetworkId))
-	allOut = append(allOut, fmt.Sprintf("geth_contracts_created %v", geth.ContractsCreated))
-	allOut = append(allOut, fmt.Sprintf("geth_token_transfers %v", geth.TokenTransfers))
+	// allOut = append(allOut, fmt.Sprintf("geth_network_id %v", geth.NetworkID))
+	// allOut = append(allOut, fmt.Sprintf("geth_contracts_created %v", geth.ContractsCreated))
+	// allOut = append(allOut, fmt.Sprintf("geth_token_transfers %v", geth.TokenTransfers))
 	allOut = append(allOut, fmt.Sprintf("geth_eth_transfers %v", geth.EthTransfers))
 	allOut = append(allOut, fmt.Sprintf("geth_load_time %0.4f", geth.LoadTime))
+	allOut = append(allOut, fmt.Sprintf("geth_sync_status %t", geth.SyncStatus))
+	allOut = append(allOut, fmt.Sprintf("geth_last_block_time %0.2f", geth.LastBlockTime))
 
 	if geth.Sync != nil {
 		allOut = append(allOut, fmt.Sprintf("geth_known_states %v", int(geth.Sync.KnownStates)))
@@ -205,7 +216,6 @@ func stringToFloat(s string) float64 {
 	return amount
 }
 
-//
 // CONVERTS WEI TO ETH
 func ToEther(o *big.Int) *big.Float {
 	pul, int := big.NewFloat(0), big.NewFloat(0)
